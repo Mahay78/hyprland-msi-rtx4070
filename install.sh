@@ -4,30 +4,25 @@
 
 set -euo pipefail
 
-# Cleanup en interrupción
 trap 'echo "⚠️ Instalación interrumpida. Limpiando..."; rm -rf /tmp/paru-build; exit 1' INT TERM ERR
 
 # ==================== VERIFICACIONES INICIALES ====================
 
-# Verificar sudo
 if ! sudo -v; then
     echo "❌ Se necesitan permisos sudo. Configura sudo primero."
     exit 1
 fi
 
-# No ejecutar desde Hyprland
 if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
     echo "❌ No ejecutes esto desde Hyprland. Cierra sesión y usa una TTY (Ctrl+Alt+F3)."
     exit 1
 fi
 
-# Verificar OS
 if ! grep -qE "Arch|CachyOS" /etc/os-release 2>/dev/null; then
     echo "❌ Este script solo funciona en Arch Linux o CachyOS"
     exit 1
 fi
 
-# Verificar NVIDIA
 if ! lspci | grep -i nvidia >/dev/null; then
     echo "❌ No se detectó GPU NVIDIA. Este script es para RTX 4070."
     exit 1
@@ -40,7 +35,6 @@ echo "🚀 Iniciando entorno Hyprland Pro para MSI Pulse 16 AI C1V..."
 BACKUP_DIR=$(mktemp -d ~/kde-backup-XXXXXXXXXX)
 echo "📦 Creando respaldo en: $BACKUP_DIR"
 
-# Backup KDE
 (
     shopt -s nullglob
     files=(~/.config/plasma* ~/.config/kwin* ~/.config/plasmashellrc ~/.config/kglobalshortcutsrc)
@@ -52,13 +46,11 @@ echo "📦 Creando respaldo en: $BACKUP_DIR"
     fi
 )
 
-# Backup Hyprland existente (si hay)
 if [ -d ~/.config/hypr ]; then
     cp -r ~/.config/hypr "$BACKUP_DIR/hypr-old-$(date +%s)"
     echo "📦 Backup de Hyprland anterior guardado"
 fi
 
-# Script de restauración
 cat > "$BACKUP_DIR/restore.sh" << 'EOF'
 #!/bin/bash
 BACKUP=$(ls -dt ~/kde-backup-* | head -1)
@@ -74,7 +66,6 @@ chmod +x "$BACKUP_DIR/restore.sh"
 echo "📦 Verificando herramientas base..."
 sudo pacman -S --needed --noconfirm base-devel git archlinux-keyring
 
-# Paru
 if ! command -v paru &>/dev/null; then
     echo "📦 Instalando paru..."
     rm -rf /tmp/paru-build
@@ -88,7 +79,6 @@ if ! command -v paru &>/dev/null; then
     cd - >/dev/null
 fi
 
-# Paquetes esenciales
 echo "📦 Instalando paquetes..."
 sudo pacman -S --needed --noconfirm \
     hyprland waybar kitty yazi hyprpaper \
@@ -105,7 +95,6 @@ echo "⚙️ Configurando Hyprland..."
 
 mkdir -p ~/.config/hypr/UserConfigs ~/.config/hypr/scripts
 
-# Variables NVIDIA
 cat > ~/.config/hypr/UserConfigs/nvidia-env.conf << 'EOF'
 # NVIDIA RTX 4070 Mobile - MSI Pulse 16 AI C1V
 env = LIBVA_DRIVER_NAME,nvidia
@@ -120,14 +109,12 @@ cursor {
 }
 EOF
 
-# Monitor
 cat > ~/.config/hypr/UserConfigs/monitors.conf << 'EOF'
 # MSI Pulse 16 - 2560x1600@165
 monitor = eDP-1, 2560x1600@165, 0x0, 1
 # Fallback: monitor = eDP-1, preferred, auto, 1
 EOF
 
-# Config principal
 cat > ~/.config/hypr/hyprland.conf << 'EOF'
 # Hyprland - MSI Pulse 16 AI C1V + RTX 4070
 source = ~/.config/hypr/UserConfigs/nvidia-env.conf
@@ -228,30 +215,26 @@ echo "🔌 Configurando detección de cargador..."
 cat > ~/.config/hypr/scripts/auto-power-profile.sh << 'EOF'
 #!/bin/bash
 # Auto-detección AC/Batería para MSI Pulse 16
-# Notifica cambios y puede ajustar perfil NVIDIA
 
 LAST_STATE=""
 
 while true; do
-    # Detectar estado AC (puede ser ACAD, ADP1, etc.)
     AC_PATH=$(find /sys/class/power_supply/ -name "AC*" -o -name "ADP*" 2>/dev/null | head -1)
     if [ -n "$AC_PATH" ] && [ -f "$AC_PATH/online" ]; then
         AC_STATUS=$(cat "$AC_PATH/online" 2>/dev/null || echo "0")
     else
         AC_STATUS="0"
     fi
-    
+
     if [ "$AC_STATUS" != "$LAST_STATE" ]; then
         if [ "$AC_STATUS" = "1" ]; then
             notify-send "🔌 Cargador Conectado" "Modo Rendimiento Máximo\nGPU desbloqueada" -i battery-full-charged
-            # Opcional: nvidia-smi -pl 115  # Desbloquear potencia
         else
             notify-send "🔋 Modo Batería" "Rendimiento reducido para ahorro" -i battery-low
-            # Opcional: nvidia-smi -pl 80   # Limitar a 80W
         fi
         LAST_STATE="$AC_STATUS"
     fi
-    
+
     sleep 10
 done
 EOF
@@ -263,7 +246,6 @@ echo "📊 Configurando Waybar..."
 
 mkdir -p ~/.config/waybar/scripts
 
-# Script GPU
 cat > ~/.config/waybar/scripts/gpu-rtx4070.sh << 'EOF'
 #!/bin/bash
 if ! command -v nvidia-smi &>/dev/null; then
@@ -273,7 +255,7 @@ fi
 
 GPU_DATA=$(nvidia-smi --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw --format=csv,noheader,nounits 2>/dev/null)
 
-if [ -z "$GPU_DATA" ] || echo "$GPU_DATA" | grep -qi "no devices\\|failed"; then
+if [ -z "$GPU_DATA" ] || echo "$GPU_DATA" | grep -qi "no devices\|failed"; then
     echo '{"text":"󰢮 Off","class":"warning"}'
     exit 0
 fi
@@ -293,12 +275,11 @@ else CLASS="good"; fi
 POWER_DISPLAY="${POWER}W"
 [ "$POWER" = "N/A" ] || [ -z "$POWER" ] && POWER_DISPLAY="N/A"
 
-printf '{"text":"󰢮 %s%% 󰔏 %s°C 󰍛 %sMB","tooltip":"RTX 4070 Mobile\\nCarga: %s%%\\nVRAM: %s/%s MB\\nTemp: %s°C\\nPotencia: %s","class":"%s"}\n' \
+printf '{"text":"󰢮 %s%% 󰔏 %s°C 󰍛 %sMB","tooltip":"RTX 4070 Mobile\nCarga: %s%%\nVRAM: %s/%s MB\nTemp: %s°C\nPotencia: %s","class":"%s"}\n' \
     "$UTIL" "$TEMP" "$VRAM_USED" "$UTIL" "$VRAM_USED" "$VRAM_TOTAL" "$TEMP" "$POWER_DISPLAY" "$CLASS"
 EOF
 chmod +x ~/.config/waybar/scripts/gpu-rtx4070.sh
 
-# Script Power (AC/Batería)
 cat > ~/.config/waybar/scripts/power-status.sh << 'EOF'
 #!/bin/bash
 # Estado de carga para Waybar
@@ -311,14 +292,13 @@ else
 fi
 
 if [ "$AC_STATUS" = "1" ]; then
-    echo '{"text":"󰂄 AC","class":"ac","tooltip":"Cargador conectado\\nModo: Rendimiento"}'
+    echo '{"text":"󰂄 AC","class":"ac","tooltip":"Cargador conectado\nModo: Rendimiento"}'
 else
-    echo '{"text":"󰁹 BAT","class":"battery","tooltip":"Modo Batería\\nRendimiento reducido"}'
+    echo '{"text":"󰁹 BAT","class":"battery","tooltip":"Modo Batería\nRendimiento reducido"}'
 fi
 EOF
 chmod +x ~/.config/waybar/scripts/power-status.sh
 
-# Config Waybar
 cat > ~/.config/waybar/config.jsonc << 'EOF'
 {
     "layer": "top",
@@ -328,7 +308,7 @@ cat > ~/.config/waybar/config.jsonc << 'EOF'
     "modules-left": ["hyprland/workspaces", "hyprland/window"],
     "modules-center": ["clock"],
     "modules-right": ["custom/power", "custom/gpu", "cpu", "memory", "battery", "tray"],
-    
+
     "hyprland/workspaces": {
         "format": "{icon}",
         "format-icons": {
@@ -337,20 +317,20 @@ cat > ~/.config/waybar/config.jsonc << 'EOF'
         },
         "on-click": "activate"
     },
-    
+
     "hyprland/window": {
         "format": "{}",
         "max-length": 50,
         "tooltip": false
     },
-    
+
     "custom/power": {
         "exec": "~/.config/waybar/scripts/power-status.sh",
         "return-type": "json",
         "interval": 5,
         "format": "{}"
     },
-    
+
     "custom/gpu": {
         "exec": "~/.config/waybar/scripts/gpu-rtx4070.sh",
         "return-type": "json",
@@ -358,18 +338,18 @@ cat > ~/.config/waybar/config.jsonc << 'EOF'
         "format": "{}",
         "tooltip": true
     },
-    
+
     "cpu": {
         "format": "󰻠 {usage}%",
         "interval": 2
     },
-    
+
     "memory": {
         "format": "󰍛 {used:0.1f}GB",
         "tooltip-format": "Uso: {total:0.1f}GB",
         "interval": 2
     },
-    
+
     "battery": {
         "bat": "BAT0",
         "format": "{icon} {capacity}%",
@@ -378,12 +358,12 @@ cat > ~/.config/waybar/config.jsonc << 'EOF'
         "format-icons": ["󰁺","󰁻","󰁼","󰁽","󰁾","󰁿","󰂀","󰂁","󰂂","󰁹"],
         "states": { "warning": 30, "critical": 15 }
     },
-    
+
     "clock": {
         "format": "󰥔 {:%H:%M}",
         "format-alt": "󰃭 {:%d/%m/%Y}"
     },
-    
+
     "tray": {
         "spacing": 8,
         "icon-size": 16
@@ -391,7 +371,6 @@ cat > ~/.config/waybar/config.jsonc << 'EOF'
 }
 EOF
 
-# CSS
 cat > ~/.config/waybar/style.css << 'EOF'
 * {
     font-family: "JetBrains Mono", "Font Awesome 6 Free";
